@@ -18,6 +18,7 @@ TARGET_LINK_LIBRARIES(sb-tree-build-dbg divsufsort64)
 
 ADD_EXECUTABLE(critbit_test critbit_test.cpp critbit_tree.cpp)
 TARGET_LINK_LIBRARIES(critbit_test gtest pthread)
+SET_TARGET_PROPERTIES(critbit_test PROPERTIES COMPILE_FLAGS "-fopenmp -O0 -g")
 
 ENABLE_TESTING()
 ADD_TEST(CritBitTest ${CURRENT_BINARY_DIR}/critbit_test)
