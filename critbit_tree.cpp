@@ -62,7 +62,6 @@ critbit_insert_suffix(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,uint64_t s
     }
 
     critbit_node_t* cur_node = cbt->root;
-    critbit_node_t* parent = NULL;
     uint8_t direction;
     while (! CRITBIT_ISLEAF(cur_node)) {
         /* traverse till we find a leaf */
@@ -73,7 +72,6 @@ critbit_insert_suffix(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,uint64_t s
         if (suffixpos + byte_pos < n) sym = T[suffixpos+byte_pos];
         /* the bit at the crit bit position decides where we go */
         direction = CRITBIT_GETDIRECTION(sym,bit_pos_in_byte);
-        parent = cur_node;
         cur_node = cur_node->child[direction];
     }
 
@@ -94,9 +92,7 @@ critbit_insert_suffix(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,uint64_t s
         i++;
     }
 
-    /* TODO: k+i || j+i < n (should not happen if 0 terminated ) */
-
-    /* insert new node */
+    /* create the new node */
     critbit_node_t* cbn = (critbit_node_t*) malloc(sizeof(critbit_node_t));
     if (!cbn) {
         fprintf(stderr, "error mallocing critbit node memory.\n");
@@ -106,14 +102,33 @@ critbit_insert_suffix(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,uint64_t s
     cbn->crit_bit_pos = (i<<3) + critbit_pos;
     /* store the data again in the ptr */
     cbn->child[newdirection] = CRITBIT_SETSUFFIX(suffixpos);
-    cbn->child[1 - newdirection] = cur_node;
 
-    /* update parent */
+    /* now go through the tree again to find the correct position to insert.
+       we have to do this to make sure the lexicographical ordering is correct */
+    cur_node = cbt->root;
+    critbit_node_t* parent = NULL;
+    while (! CRITBIT_ISLEAF(cur_node)) {
+        /* traverse till we find a leaf */
+        uint64_t byte_pos = CRITBIT_GETBYTEPOS(cur_node->crit_bit_pos);
+        uint8_t bit_pos_in_byte = CRITBIT_GETBITPOS(cur_node->crit_bit_pos);
+        uint8_t sym = 0;
+        /* do we stop and insert because the current node is too far down? */
+        if (cur_node->crit_bit_pos > cbn->crit_bit_pos) break;
+        /* use the crit bit pos to decide where to go */
+        if (suffixpos + byte_pos < n) sym = T[suffixpos+byte_pos];
+        /* the bit at the crit bit position decides where we go */
+        direction = CRITBIT_GETDIRECTION(sym,bit_pos_in_byte);
+        parent = cur_node;
+        cur_node = cur_node->child[direction];
+    }
+
+    /* insert the new node into the tree */
     if (parent) {
         parent->child[direction] = cbn;
     } else {
         cbt->root = cbn;
     }
+    cbn->child[1 - newdirection] = cur_node;
 }
 
 /* delete suffix corresponding to position (suffixpos) from the critbit tree
@@ -228,9 +243,7 @@ critbit_suffixes(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,const uint8_t* 
             sym = P[byte_pos];
         }
         /* the bit at the crit bit position decides where we go */
-        fprintf(stderr, "sym = %u\n byte_pos %lu",sym,byte_pos);
         direction = CRITBIT_GETDIRECTION(sym,bit_pos_in_byte);
-        fprintf(stderr, "direction = %u\n",direction);
         cur_node = cur_node->child[direction];
 
         if (byte_pos < m) {
@@ -244,7 +257,6 @@ critbit_suffixes(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,const uint8_t* 
 
     /* we are at a leaf. check if the prefix matches P up to m symbols. */
     uint64_t suffixpos = CRITBIT_GETSUFFIX(cur_node);
-    fprintf(stderr, "verify = %lu\n",suffixpos);
     uint64_t i;
     for (i = 0; i < m && suffixpos+i < n; i++) {
         if (T[suffixpos+i] != P[i]) return 0;
@@ -258,9 +270,16 @@ critbit_suffixes(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,const uint8_t* 
             fprintf(stderr, "error mallocing critbit result set memory.\n");
             exit(EXIT_FAILURE);
         }
-        critbit_collectsuffixes(locus,results,&nresults,&res_size);
+
+        /* make sure the locus is not a leaf first */
+        if (CRITBIT_ISLEAF(locus)) {
+            critbit_addresult(results,&nresults,&res_size,CRITBIT_GETSUFFIX(locus));
+            return nresults;
+        } else {
+            /* traverse the leafs of the locus sub tree */
+            critbit_collectsuffixes(locus,results,&nresults,&res_size);
+        }
         *results = (uint64_t*) realloc(*results,nresults*sizeof(uint64_t));
-        fprintf(stderr, "nresults = %lu\n", nresults);
         if (*results == NULL) {
             fprintf(stderr, "error reallocing critbit result set memory.\n");
             exit(EXIT_FAILURE);
@@ -289,7 +308,6 @@ critbit_collectsuffixes(critbit_node_t* node,uint64_t** results,uint64_t* nresul
 void
 critbit_addresult(uint64_t** results,uint64_t* nresults,uint64_t* res_size,uint64_t suffix)
 {
-    fprintf(stderr, "addresults(%lu)\n", suffix);
     if (*nresults == *res_size) {
         *res_size = *res_size * 2;
         *results = (uint64_t*) realloc(*results,*res_size);
