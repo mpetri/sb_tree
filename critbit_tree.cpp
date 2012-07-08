@@ -43,10 +43,20 @@ critbit_delete_nodes(critbit_node_t* node)
     }
 }
 
+/* returns the number of bytes used by the critbit tree.
+
+    there are g leaf nodes in the tree. therefore, there are g-1 internal nodes.
+    the leaf nodes are stored in the pointers of the g-1 internal nodes.
+
+    the number of bytes used by the critbit tree therefore is g-1 * sizeof(node size)
+
+*/
 uint64_t
 critbit_getsize_in_bytes(critbit_tree_t* cbt)
 {
-
+    uint64_t bytes = sizeof(critbit_tree_t);
+    bytes += ((cbt->g-1)*sizeof(critbit_node_t));
+    return bytes;
 }
 
 /*
