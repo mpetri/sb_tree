@@ -269,8 +269,6 @@ TEST(critbit , suffixes)
     critbit_insert_suffix(cbt,(const uint8_t*)T,n,8); /* insert ppi$ */
     critbit_insert_suffix(cbt,(const uint8_t*)T,n,0); /* insert mississippi$ */
 
-    critbit_print_tex(cbt);
-
     uint64_t* results;
     EXPECT_EQ(critbit_suffixes(cbt,(const uint8_t*)T,n, (const uint8_t*)"s",1,&results) , 3);
     EXPECT_TRUE(results[0] == 2 && results[1] == 5 && results[2] == 6);
