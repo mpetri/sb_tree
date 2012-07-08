@@ -191,12 +191,23 @@ TEST(critbit , insert_suffix)
     const char* T = "mississippi$";
     size_t n = strlen(T);
 
+    EXPECT_EQ(cbt->g,0);
     critbit_insert_suffix(cbt,(const uint8_t*)T,n,5);
+    EXPECT_EQ(cbt->g,1);
     critbit_insert_suffix(cbt,(const uint8_t*)T,n,7);
+    EXPECT_EQ(cbt->g,2);
     critbit_insert_suffix(cbt,(const uint8_t*)T,n,6);
+    EXPECT_EQ(cbt->g,3);
     critbit_insert_suffix(cbt,(const uint8_t*)T,n,2);
+    EXPECT_EQ(cbt->g,4);
     critbit_insert_suffix(cbt,(const uint8_t*)T,n,8);
+    EXPECT_EQ(cbt->g,5);
     critbit_insert_suffix(cbt,(const uint8_t*)T,n,0);
+    EXPECT_EQ(cbt->g,6);
+    critbit_insert_suffix(cbt,(const uint8_t*)T,n,2);
+    EXPECT_EQ(cbt->g,6);
+    critbit_insert_suffix(cbt,(const uint8_t*)T,n,5);
+    EXPECT_EQ(cbt->g,6);
 
     critbit_free(cbt);
 }
@@ -215,16 +226,28 @@ TEST(critbit , delete_suffix)
     critbit_insert_suffix(cbt,(const uint8_t*)T,n,8);
     critbit_insert_suffix(cbt,(const uint8_t*)T,n,0);
 
+    EXPECT_EQ(cbt->g,6);
+
     EXPECT_EQ(critbit_delete_suffix(cbt,(const uint8_t*)T,n,0) , 0);
+    EXPECT_EQ(cbt->g,5);
     EXPECT_EQ(critbit_delete_suffix(cbt,(const uint8_t*)T,n,1) , 1);
+    EXPECT_EQ(cbt->g,5);
     EXPECT_EQ(critbit_delete_suffix(cbt,(const uint8_t*)T,n,2) , 0);
+    EXPECT_EQ(cbt->g,4);
     EXPECT_EQ(critbit_delete_suffix(cbt,(const uint8_t*)T,n,3) , 1);
+    EXPECT_EQ(cbt->g,4);
     EXPECT_EQ(critbit_delete_suffix(cbt,(const uint8_t*)T,n,4) , 1);
+    EXPECT_EQ(cbt->g,4);
     EXPECT_EQ(critbit_delete_suffix(cbt,(const uint8_t*)T,n,5) , 0);
+    EXPECT_EQ(cbt->g,3);
     EXPECT_EQ(critbit_delete_suffix(cbt,(const uint8_t*)T,n,6) , 0);
+    EXPECT_EQ(cbt->g,2);
     EXPECT_EQ(critbit_delete_suffix(cbt,(const uint8_t*)T,n,7) , 0);
+    EXPECT_EQ(cbt->g,1);
     EXPECT_EQ(critbit_delete_suffix(cbt,(const uint8_t*)T,n,8) , 0);
+    EXPECT_EQ(cbt->g,0);
     EXPECT_EQ(critbit_delete_suffix(cbt,(const uint8_t*)T,n,9) , 1);
+    EXPECT_EQ(cbt->g,0);
 
     critbit_free(cbt);
 }

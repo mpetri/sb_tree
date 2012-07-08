@@ -23,6 +23,7 @@ typedef struct critbit_node {
 
 typedef struct {
     critbit_node_t* root;
+    uint64_t g;            /* number of elements in the critbit tree. */
 } critbit_tree_t;
 
 critbit_tree_t* critbit_create();

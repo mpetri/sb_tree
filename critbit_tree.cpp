@@ -11,6 +11,7 @@ critbit_create()
         exit(EXIT_FAILURE);
     }
     cbt->root = NULL;
+    cbt->g = 0;
     return cbt;
 }
 
@@ -58,6 +59,7 @@ critbit_insert_suffix(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,uint64_t s
     if (!cbt->root) {
         /* store suffix in the root ptr */
         cbt->root =  CRITBIT_SETSUFFIX(suffixpos);
+        cbt->g++; /* one more node */
         return;
     }
 
@@ -81,6 +83,12 @@ critbit_insert_suffix(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,uint64_t s
     uint64_t i = 0;
     uint64_t k = suffixpos;
     uint64_t j = CRITBIT_GETSUFFIX(cur_node);
+
+    /* check if the new suffix is already contained */
+    if (j == suffixpos) {
+        return;
+    }
+
     /* compare suffixes till we find the crit bit pos */
     while (k+i < n && j+i < n) {
         if (T[k+i] != T[j+i]) {
@@ -129,6 +137,7 @@ critbit_insert_suffix(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,uint64_t s
         cbt->root = cbn;
     }
     cbn->child[1 - newdirection] = cur_node;
+    cbt->g++; /* one more node */
 }
 
 /* delete suffix corresponding to position (suffixpos) from the critbit tree
@@ -176,6 +185,10 @@ critbit_delete_suffix(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,uint64_t s
         }
         free(parent);
     }
+
+    /* one less node */
+    cbt->g--;
+
     return 0;
 }
 
