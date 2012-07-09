@@ -416,13 +416,14 @@ critbit_create_bp(critbit_node_t* node,bit_vector& bp,uint64_t* pos)
     bp[*pos] = 0; (*pos)++;
 }
 
+/* we difference encode the positions here to get smaller numbers */
 void
-critbit_create_posarray(critbit_node_t* node,int_vector<>& pos,uint64_t* p)
+critbit_create_posarray(critbit_node_t* node,int_vector<>& pos,uint64_t* p,uint64_t parentpos)
 {
     if (! CRITBIT_ISLEAF(node)) {
-        pos[*p] = node->crit_bit_pos; (*p)++;
-        critbit_create_posarray(node->child[CRITBIT_LEFTCHILD],pos,p);
-        critbit_create_posarray(node->child[CRITBIT_RIGHTCHILD],pos,p);
+        pos[*p] = node->crit_bit_pos - parentpos; (*p)++;
+        critbit_create_posarray(node->child[CRITBIT_LEFTCHILD],pos,p,node->crit_bit_pos);
+        critbit_create_posarray(node->child[CRITBIT_RIGHTCHILD],pos,p,node->crit_bit_pos);
     }
 }
 
@@ -441,6 +442,8 @@ critbit_create_suffixarray(critbit_node_t* node,int_vector<>& suffixes,uint64_t*
 uint64_t
 critbit_write(critbit_tree_t* cbt,FILE* out)
 {
+    fprintf(stderr, "g = %Lu\n", cbt->g);
+
     /* create the bp sequence of 2g bits */
     bit_vector bp((cbt->g+cbt->g-1)*2);
     uint64_t p = 0;
@@ -452,7 +455,7 @@ critbit_write(critbit_tree_t* cbt,FILE* out)
     /* create pos array */
     int_vector<> pos(cbt->g-1);
     p = 0;
-    critbit_create_posarray(cbt->root,pos,&p);
+    critbit_create_posarray(cbt->root,pos,&p,0);
     if (p != cbt->g-1) {
         fprintf(stderr, "ERROR creating pos array sequence (%lu,%lu)\n",p,cbt->g-1);
     }
@@ -469,7 +472,6 @@ critbit_write(critbit_tree_t* cbt,FILE* out)
     /* write g */
     written += fwrite(&cbt->g,1,sizeof(uint64_t),out);
 
-
     /* compress */
     util::bit_compress(pos);
     util::bit_compress(suffixes);
@@ -479,6 +481,9 @@ critbit_write(critbit_tree_t* cbt,FILE* out)
     uint64_t suffix_width = suffixes.get_int_width();
     written += fwrite(&pos_width,1,sizeof(uint64_t),out);
     written += fwrite(&suffix_width,1,sizeof(uint64_t),out);
+
+    fprintf(stderr, "critbit::write: bit_pos_in_byte %lu\n",pos_width);
+    fprintf(stderr, "critbit::write: suffix_in_byte %lu\n",suffix_width);
 
     /* write bp */
     const uint64_t* bp_data = bp.data();
@@ -570,7 +575,8 @@ critbit_load_from_mem(uint64_t* mem,uint64_t size)
             else parent->child[CRITBIT_RIGHTCHILD] = cbn;
 
             /* get data */
-            cbn->crit_bit_pos = critbit_getelem(pos,curpos,pos_width);
+            /* we difference encoded the numbers so we have to undo this here */
+            cbn->crit_bit_pos = parent->crit_bit_pos + critbit_getelem(pos,curpos,pos_width);
             cbn->child[CRITBIT_LEFTCHILD] = NULL;
             cbn->child[CRITBIT_RIGHTCHILD] = NULL;
             stack.push(cbn);

@@ -392,6 +392,8 @@ TEST(critbit , load_save)
 
     fclose(tf);
     free(mem);
+    critbit_print_tex(cbt);
+    critbit_print_tex(cbtload);
     critbit_free(cbt);
     critbit_free(cbtload);
 }

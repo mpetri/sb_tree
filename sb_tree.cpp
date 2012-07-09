@@ -56,7 +56,7 @@ sbtree_create(const char* text_file,const char* outfile,uint64_t B)
     strcpy(sa_file,outfile);
     strcat(sa_file,".saraw");
     FILE* sa_out = fopen(sa_file,"w");
-    if (fwrite(T,sizeof(uint64_t),n,sa_out) != n) {
+    if (fwrite(SA,sizeof(uint64_t),n,sa_out) != n) {
         fprintf(stderr, "error writing sa file '%s'\n",sa_file);
         exit(EXIT_FAILURE);
     }
@@ -74,7 +74,7 @@ sbtree_build(const char* sa_file,const char* text_file,const char* outfile,uint6
 
     sbt->n = sb_getfilesize(text_file);
     sbt->bits_per_suffix = bit_magic::l1BP(sbt->n)+1;
-    sbt->bits_per_pos = bit_magic::l1BP(maxlcp)+1;;
+    sbt->bits_per_pos = 8*(bit_magic::l1BP(maxlcp)+1);
     sbt->B = B;
     sbt->b = sbtree_calc_branch_factor(sbt);
     sbt->height = sbtree_calc_height(sbt);
@@ -144,11 +144,16 @@ sbtree_createtree(sbtree_t* sbt,sbtmpfile_t* suffixes,const uint8_t* T,uint64_t 
     uint64_t* suf = (uint64_t*) sb_malloc(sbt->b*sizeof(uint64_t));
     uint64_t* next_suf = (uint64_t*) sb_malloc(sbt->b*sizeof(uint64_t));
     uint64_t j,nsuf; j = 0;
+    uint64_t blocks_processed = 0;
     while ((nsuf=sbtmpfile_read_block(suffixes,suf,sbt->b)) > 0) {
+        fprintf(stderr, "PROCESSING %lu suffixes.\n",nsuf);
+        fprintf(stderr, "creating critbit tree.\n");
         critbit_tree_t* cbt = critbit_create_from_suffixes(T,n,suf,nsuf);
 
         /* write node to the index file. fits into B bytes */
         uint64_t written = critbit_write(cbt,sbt_fd);
+        critbit_free(cbt);
+        fprintf(stderr, "written %lu bytes to disk.\n",written);
 
         if (written > sbt->B) {
             fprintf(stderr, "ERROR! critbit tree larger than block size! (%lu,%lu)\n",written,sbt->B);
@@ -161,19 +166,26 @@ sbtree_createtree(sbtree_t* sbt,sbtmpfile_t* suffixes,const uint8_t* T,uint64_t 
         /* add the first suffix in block to next lvl file */
         next_suf[j] = suf[0]; j++;
         if (j==sbt->b) {
+            fprintf(stderr, "writing %lu suffixes to tmp file for next lvl.\n",j);
             sbtmpfile_write_block(next_level,next_suf,sbt->b);
             j = 0;
         }
+
+        blocks_processed++;
     }
-    /* write last block */
-    if (j>0) sbtmpfile_write_block(next_level,next_suf,j);
+    /* write last block of the next level */
+    if (j>0) {
+        sbtmpfile_write_block(next_level,next_suf,j);
+    }
+
+    fprintf(stderr, "processed %lu blocks\n",blocks_processed);
 
     free(suf);
     free(next_suf);
     sbtmpfile_finish(next_level);
 
-    /* recurse to the next level */
-    sbtree_createtree(sbt,next_level,T,n,sbt_fd);
+    /* recurse to the next level if we processed more than 1 block this level -> not root yet */
+    if (blocks_processed > 1) sbtree_createtree(sbt,next_level,T,n,sbt_fd);
 }
 
 /* load a SB-tree from disk */
@@ -315,10 +327,13 @@ sbtree_writeheader(sbtree_t* sbt,FILE* out)
 void
 sbtree_addpadding(FILE* out,uint64_t bytes)
 {
-    uint8_t* dummy_root = (uint8_t*) sb_malloc(bytes);
-    memset(dummy_root,rand()%50,bytes);
-    fwrite(dummy_root,1,bytes,out);
-    free(dummy_root);
+    if (bytes) {
+        fprintf(stderr, "added %lu bytes padding.\n",bytes);
+        uint8_t* dummy_root = (uint8_t*) sb_malloc(bytes);
+        memset(dummy_root,rand()%50,bytes);
+        fwrite(dummy_root,1,bytes,out);
+        free(dummy_root);
+    }
 }
 
 /* read the index header */
