@@ -44,7 +44,7 @@ sbtree_t* sbtree_build(const char* sa_file,const char* text_file,const char* out
 sbtree_t* sbtree_load(const char* sb_file,const char* text_file);
 void      sbtree_printstats(const sbtree_t* sbt);
 void      sbtree_free(sbtree_t* sbt);
-void      sbtree_createtree(sbtree_t* sbt,sbtmpfile_t* suffixes,FILE* sbt_fd);
+void      sbtree_createtree(sbtree_t* sbt,sbtmpfile_t* suffixes,const uint8_t* T,uint64_t n,FILE* sbt_fd);
 
 /* query functions */
 uint64_t*   sbtree_search(const sbtree_t* sbt,const uint8_t* P,uint64_t m,uint64_t* nres);

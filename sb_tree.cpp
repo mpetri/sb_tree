@@ -11,7 +11,7 @@
 
 #include "sb_tree.h"
 #include "sb_util.h"
-#include "blind_trie.h"
+#include "critbit_tree.h"
 
 #include <sdsl/bitmagic.hpp>
 
@@ -104,7 +104,22 @@ sbtree_build(const char* sa_file,const char* text_file,const char* outfile,uint6
     FILE* sa_fd = fopen(sa_file,"r");
     /* we wrap the suffix array in the tmpfile to keep the createtree function simple */
     sbtmpfile_t* sbtf = sbtmpfile_read_from_file(sa_fd);
-    sbtree_createtree(sbt,sbtf,out);
+
+    /* we need the complete text in memory for construction as the critbit tree construction
+       randomly accesses the text during construction */
+    uint8_t* T = (uint8_t*) malloc(sbt->n);
+    FILE* t_in = fopen(text_file,"r");
+    if (!t_in) {
+        fprintf(stderr, "cannot input text file '%s'\n",text_file);
+        exit(EXIT_FAILURE);
+    }
+    if (fread(T,1,sbt->n,t_in) != sbt->n) {
+        fprintf(stderr, "error reading input text from file '%s'\n",text_file);
+        exit(EXIT_FAILURE);
+    }
+    fclose(t_in);
+
+    sbtree_createtree(sbt,sbtf,T,sbt->n,out);
     sbtmpfile_delete(sbtf);
 
     /* close the index file */
@@ -119,7 +134,7 @@ sbtree_build(const char* sa_file,const char* text_file,const char* outfile,uint6
 
 /* stream sa from disk and construct the sb-tree */
 void
-sbtree_createtree(sbtree_t* sbt,sbtmpfile_t* suffixes,FILE* sbt_fd)
+sbtree_createtree(sbtree_t* sbt,sbtmpfile_t* suffixes,const uint8_t* T,uint64_t n,FILE* sbt_fd)
 {
     /* tmp file we store the next level in */
     sbtmpfile_t* next_level = sbtmpfile_create_write();
@@ -128,12 +143,20 @@ sbtree_createtree(sbtree_t* sbt,sbtmpfile_t* suffixes,FILE* sbt_fd)
     sbtmpfile_open_read(suffixes);
     uint64_t* suf = (uint64_t*) sb_malloc(sbt->b*sizeof(uint64_t));
     uint64_t* next_suf = (uint64_t*) sb_malloc(sbt->b*sizeof(uint64_t));
-    uint64_t j,n; j = 0;
-    while ((n=sbtmpfile_read_block(suffixes,suf,sbt->b)) > 0) {
-        blindtrie_t* bt = blindtrie_create(sbt,suf,n);
+    uint64_t j,nsuf; j = 0;
+    while ((nsuf=sbtmpfile_read_block(suffixes,suf,sbt->b)) > 0) {
+        critbit_tree_t* cbt = critbit_create_from_suffixes(T,n,suf,nsuf);
 
-        /* write node to the index file */
-        blindtrie_write(sbt,bt,sbt_fd);
+        /* write node to the index file. fits into B bytes */
+        uint64_t written = critbit_write(cbt,sbt_fd);
+
+        if (written > sbt->B) {
+            fprintf(stderr, "ERROR! critbit tree larger than block size! (%lu,%lu)\n",written,sbt->B);
+            exit(EXIT_FAILURE);
+        }
+
+        /* add padding to fill up the disk page */
+        sbtree_addpadding(sbt_fd,sbt->B-written);
 
         /* add the first suffix in block to next lvl file */
         next_suf[j] = suf[0]; j++;
@@ -150,7 +173,7 @@ sbtree_createtree(sbtree_t* sbt,sbtmpfile_t* suffixes,FILE* sbt_fd)
     sbtmpfile_finish(next_level);
 
     /* recurse to the next level */
-    sbtree_createtree(sbt,next_level,sbt_fd);
+    sbtree_createtree(sbt,next_level,T,n,sbt_fd);
 }
 
 /* load a SB-tree from disk */

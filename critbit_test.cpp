@@ -317,6 +317,86 @@ TEST(critbit , suffixes)
     critbit_free(cbt);
 }
 
+TEST(critbit , create_from_suffixes)
+{
+    const char* T = "mississippi$";
+    size_t n = strlen(T);
+
+    uint64_t suffixes[6] = {1,3,5,7,9,11};
+
+    critbit_tree_t* cbt = critbit_create_from_suffixes((const uint8_t*)T,n,suffixes,6);
+
+    EXPECT_EQ(critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"mississippi",11) , 0);
+    EXPECT_EQ(critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"ississippi",10) , 1);
+    EXPECT_EQ(critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"ssissippi",9) , 0);
+    EXPECT_EQ(critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"sissippi",8) , 1);
+    EXPECT_EQ(critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"issippi",7) , 0);
+    EXPECT_EQ(critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"ssippi",6) , 1);
+    EXPECT_EQ(critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"sippi",5) , 0);
+    EXPECT_EQ(critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"ippi",4) , 1);
+    EXPECT_EQ(critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"ppi",3) , 0);
+    EXPECT_EQ(critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"pi",2) , 1);
+
+    critbit_free(cbt);
+}
+
+TEST(critbit , load_save)
+{
+    critbit_tree_t* cbt = critbit_create();
+
+    const char* T = "mississippi$";
+    size_t n = strlen(T);
+
+    critbit_insert_suffix(cbt,(const uint8_t*)T,n,5); /* insert ssippi$ */
+    critbit_insert_suffix(cbt,(const uint8_t*)T,n,7); /* insert ippi$ */
+    critbit_insert_suffix(cbt,(const uint8_t*)T,n,6); /* insert sippi$ */
+    critbit_insert_suffix(cbt,(const uint8_t*)T,n,2); /* insert ssissippi$ */
+    critbit_insert_suffix(cbt,(const uint8_t*)T,n,8); /* insert ppi$ */
+    critbit_insert_suffix(cbt,(const uint8_t*)T,n,0); /* insert mississippi$ */
+
+    FILE* tf = tmpfile();
+
+    uint64_t written = critbit_write(cbt,tf);
+
+    uint64_t* mem = (uint64_t*) malloc(written);
+    fseek(tf,SEEK_SET,0);
+    fread(mem,1,written,tf);
+
+    critbit_tree_t* cbtload = critbit_load_from_mem(mem,written);
+
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"s",1) , 1);
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"ss",2) , 1);
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"iss",3) , 0);
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"i$",2) , 0);
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"ippi$",5) , 1);
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"mississippi$",12) , 1);
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"x",1) , 0);
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"sleep",5) , 0);
+
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"s",1) ,
+              critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"s",1));
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"ss",2) ,
+              critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"ss",2));
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"iss",3) ,
+              critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"iss",3));
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"i$",2) ,
+              critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"i$",2));
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"ippi$",5) ,
+              critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"ippi$",5));
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"mississippi$",12) ,
+              critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"mississippi$",12));
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"x",1) ,
+              critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"x",1));
+    EXPECT_EQ(critbit_contains(cbtload,(const uint8_t*)T,n, (const uint8_t*)"sleep",5) ,
+              critbit_contains(cbt,(const uint8_t*)T,n, (const uint8_t*)"sleep",5));
+
+    fclose(tf);
+    free(mem);
+    critbit_free(cbt);
+    critbit_free(cbtload);
+}
+
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);

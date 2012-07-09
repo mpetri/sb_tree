@@ -1,6 +1,11 @@
 
 #include "critbit_tree.h"
 
+#include <sdsl/int_vector.hpp>
+#include <stack>
+
+using namespace sdsl;
+
 /* create a new critbit tree */
 critbit_tree_t*
 critbit_create()
@@ -12,6 +17,17 @@ critbit_create()
     }
     cbt->root = NULL;
     cbt->g = 0;
+    return cbt;
+}
+
+critbit_tree_t*
+critbit_create_from_suffixes(const uint8_t* T,uint64_t n,uint64_t* suffixes,uint64_t nsuffixes)
+{
+    critbit_tree_t* cbt = critbit_create();
+
+    /* insert the suffixes */
+    for (uint64_t i=0; i<nsuffixes; i++) critbit_insert_suffix(cbt,T,n,suffixes[i]);
+
     return cbt;
 }
 
@@ -245,7 +261,7 @@ critbit_intcmp(const void* a,const void* b)
     return ua - ub;
 }
 
-/* returns all suffixes matching the prefix P of length m. */
+/* returns all suffix positions matching the prefix P of length m. */
 uint64_t
 critbit_suffixes(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,const uint8_t* P,uint64_t m,uint64_t** results)
 {
@@ -370,8 +386,7 @@ critbit_print_tex(critbit_tree_t* cbt)
     fprintf(stdout, "\\usepackage{tikz-qtree}\n");
     fprintf(stdout, "\\begin{document}\n");
     fprintf(stdout, "\\begin{tikzpicture}\n");
-    fprintf(stdout, "\\Tree ");
-    critbit_print_tex_node(cbt->root);
+    fprintf(stdout, "\\Tree "); critbit_print_tex_node(cbt->root);
     fprintf(stdout, "\n\\end{tikzpicture}\n");
     fprintf(stdout, "\\end{document}\n");
 }
@@ -390,4 +405,185 @@ critbit_print_tex_node(critbit_node_t* node)
     }
 }
 
+void
+critbit_create_bp(critbit_node_t* node,bit_vector& bp,uint64_t* pos)
+{
+    bp[*pos] = 1; (*pos)++;
+    if (! CRITBIT_ISLEAF(node)) {
+        critbit_create_bp(node->child[CRITBIT_LEFTCHILD],bp,pos);
+        critbit_create_bp(node->child[CRITBIT_RIGHTCHILD],bp,pos);
+    }
+    bp[*pos] = 0; (*pos)++;
+}
 
+void
+critbit_create_posarray(critbit_node_t* node,int_vector<>& pos,uint64_t* p)
+{
+    if (! CRITBIT_ISLEAF(node)) {
+        pos[*p] = node->crit_bit_pos; (*p)++;
+        critbit_create_posarray(node->child[CRITBIT_LEFTCHILD],pos,p);
+        critbit_create_posarray(node->child[CRITBIT_RIGHTCHILD],pos,p);
+    }
+}
+
+void
+critbit_create_suffixarray(critbit_node_t* node,int_vector<>& suffixes,uint64_t* p)
+{
+    if (! CRITBIT_ISLEAF(node)) {
+        critbit_create_suffixarray(node->child[CRITBIT_LEFTCHILD],suffixes,p);
+        critbit_create_suffixarray(node->child[CRITBIT_RIGHTCHILD],suffixes,p);
+    } else {
+        suffixes[*p] = CRITBIT_GETSUFFIX(node); (*p)++;
+    }
+}
+
+
+uint64_t
+critbit_write(critbit_tree_t* cbt,FILE* out)
+{
+    /* create the bp sequence of 2g bits */
+    bit_vector bp((cbt->g+cbt->g-1)*2);
+    uint64_t p = 0;
+    critbit_create_bp(cbt->root,bp,&p);
+    if (p != (cbt->g+cbt->g-1)*2) {
+        fprintf(stderr, "ERROR creating bp sequence (%lu,%lu)\n",p,cbt->g*2);
+    }
+
+    /* create pos array */
+    int_vector<> pos(cbt->g-1);
+    p = 0;
+    critbit_create_posarray(cbt->root,pos,&p);
+    if (p != cbt->g-1) {
+        fprintf(stderr, "ERROR creating pos array sequence (%lu,%lu)\n",p,cbt->g-1);
+    }
+
+    /* create suffixes array */
+    int_vector<> suffixes(cbt->g);
+    p = 0;
+    critbit_create_suffixarray(cbt->root,suffixes,&p);
+    if (p != cbt->g) {
+        fprintf(stderr, "ERROR creating suffix array sequence (%lu,%lu)\n",p,cbt->g);
+    }
+
+    uint64_t written = 0;
+    /* write g */
+    written += fwrite(&cbt->g,1,sizeof(uint64_t),out);
+
+
+    /* compress */
+    util::bit_compress(pos);
+    util::bit_compress(suffixes);
+
+    /* write len of data */
+    uint64_t pos_width = pos.get_int_width();
+    uint64_t suffix_width = suffixes.get_int_width();
+    written += fwrite(&pos_width,1,sizeof(uint64_t),out);
+    written += fwrite(&suffix_width,1,sizeof(uint64_t),out);
+
+    /* write bp */
+    const uint64_t* bp_data = bp.data();
+    uint64_t data_len = bp.capacity()>>3; /* convert bits to byte */
+    written += fwrite(bp_data,1,data_len,out);
+
+    /* write pos array */
+    const uint64_t* pos_data = pos.data();
+    data_len = pos.capacity()>>3; /* convert bits to byte */
+    written += fwrite(pos_data,1,data_len,out);
+
+    /* write suffixes */
+    const uint64_t* suffix_data = suffixes.data();
+    data_len = suffixes.capacity()>>3; /* convert bits to byte */
+    written += fwrite(suffix_data,1,data_len,out);
+
+    return written;
+}
+
+uint64_t
+critbit_getelem(const uint64_t* mem,uint64_t idx,uint64_t width)
+{
+    uint64_t i = idx * width;
+    return bit_magic::read_int(mem+(i>>6), i&0x3F, width);
+}
+
+
+/* reconstructs the tree from memory */
+critbit_tree_t*
+critbit_load_from_mem(uint64_t* mem,uint64_t size)
+{
+    critbit_tree_t* cbt = critbit_create();
+
+    /* calc starting positions of all data elements */
+    cbt->g = mem[0];
+    uint64_t pos_width = mem[1];
+    uint64_t suffix_width = mem[2];
+    uint64_t* bp = &mem[3];
+    uint64_t pos_offset = 3 + ((((cbt->g+cbt->g-1)*2)+63)>>6);
+    uint64_t* pos = &mem[pos_offset];
+    uint64_t pos_len_in_u64 = ((cbt->g * pos_width)+63)>>6;
+    uint64_t suffix_offset = pos_offset + pos_len_in_u64;
+    uint64_t* suffixes = &mem[suffix_offset];
+
+    /* reconstruct the tree */
+    std::stack<critbit_node_t*> stack;
+
+    /* add root to the tree */
+    critbit_node_t* cbn = (critbit_node_t*) malloc(sizeof(critbit_node_t));
+    if (!cbn) {
+        fprintf(stderr, "error mallocing critbit node memory.\n");
+        exit(EXIT_FAILURE);
+    }
+    cbn->crit_bit_pos = critbit_getelem(pos,0,pos_width);
+    cbn->child[CRITBIT_LEFTCHILD] = NULL;
+    cbn->child[CRITBIT_RIGHTCHILD] = NULL;
+    stack.push(cbn);
+    cbt->root = cbn;
+
+    /* process the bp */
+    critbit_node_t* parent = NULL;
+    uint64_t curpos = 1;
+    uint64_t cursuffix = 0;
+    uint64_t prev1pos = 0;
+    uint64_t i = 1;
+    while (!stack.empty()) {
+
+        if (critbit_getelem(bp,i,1) == 1 && critbit_getelem(bp,i+1,1) == 0) {
+            /* add suffix leaf to current top node of stack */
+            cbn = stack.top();
+            if (cbn->child[CRITBIT_LEFTCHILD] == NULL)
+                cbn->child[CRITBIT_LEFTCHILD] = CRITBIT_SETSUFFIX(critbit_getelem(suffixes,cursuffix,suffix_width));
+            else
+                cbn->child[CRITBIT_RIGHTCHILD] = CRITBIT_SETSUFFIX(critbit_getelem(suffixes,cursuffix,suffix_width));
+            cursuffix++;
+            i+=2;
+            continue;
+        }
+        if (critbit_getelem(bp,i,1) == 1 && critbit_getelem(bp,i+1,1) == 1) {
+            /* add new node on the stack */
+            cbn = (critbit_node_t*) malloc(sizeof(critbit_node_t));
+            if (!cbn) {
+                fprintf(stderr, "error mallocing critbit node memory.\n");
+                exit(EXIT_FAILURE);
+            }
+            /* link to the parent */
+            parent = stack.top();
+            if (parent->child[CRITBIT_LEFTCHILD] == NULL) parent->child[CRITBIT_LEFTCHILD] = cbn;
+            else parent->child[CRITBIT_RIGHTCHILD] = cbn;
+
+            /* get data */
+            cbn->crit_bit_pos = critbit_getelem(pos,curpos,pos_width);
+            cbn->child[CRITBIT_LEFTCHILD] = NULL;
+            cbn->child[CRITBIT_RIGHTCHILD] = NULL;
+            stack.push(cbn);
+            curpos++;
+            i++;
+            continue;
+        }
+        if (critbit_getelem(bp,i,1) == 0) {
+            /* we are done with the top node of the stack */
+            parent = stack.top();
+            stack.pop();
+            i++;
+        }
+    }
+    return cbt;
+}

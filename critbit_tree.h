@@ -17,15 +17,16 @@
 #define CRITBIT_GETCRITBITPOS(x,y) (__builtin_clz(x^y) - ((sizeof(unsigned int) - sizeof(uint8_t))<<3))
 
 typedef struct critbit_node {
-    uint64_t crit_bit_pos;
-    struct critbit_node* child[2];
+    uint64_t crit_bit_pos;           /* position of the critical bit */
+    struct critbit_node* child[2];   /* child pointers or data */
 } critbit_node_t;
 
 typedef struct {
-    critbit_node_t* root;
+    critbit_node_t* root;  /* pointer to the root of the tree */
     uint64_t g;            /* number of elements in the critbit tree. */
 } critbit_tree_t;
 
+critbit_tree_t* critbit_create_from_suffixes(const uint8_t* T,uint64_t n,uint64_t* suffixes,uint64_t nsuffixes);
 critbit_tree_t* critbit_create();
 void            critbit_free(critbit_tree_t* cbt);
 void			critbit_clear(critbit_tree_t* cbt);
@@ -35,6 +36,11 @@ uint64_t        critbit_contains(critbit_tree_t* cbt,const uint8_t* T,uint64_t n
 uint64_t		critbit_suffixes(critbit_tree_t* cbt,const uint8_t* T,uint64_t n,const uint8_t* P,uint64_t m,uint64_t** results);
 void			critbit_print(critbit_tree_t* cbt);
 void			critbit_print_tex(critbit_tree_t* cbt);
+uint64_t		critbit_getsize_in_bytes(critbit_tree_t* cbt);
+
+/* I/O functions */
+uint64_t		critbit_write(critbit_tree_t* cbt,FILE* out);
+critbit_tree_t* critbit_load_from_mem(uint64_t* mem,uint64_t size);
 
 /* helper functions */
 void 			critbit_delete_nodes(critbit_node_t* node);
